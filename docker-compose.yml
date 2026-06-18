@@ -1,0 +1,52 @@
+version: "3.8"
+
+# docker-compose orchestrates multiple containers as a single stack.
+# Here we define two services: the API and its PostgreSQL database.
+# Running 'docker-compose up' starts both, wires them together on
+# a shared network, and handles startup ordering automatically.
+
+services:
+  db:
+    image: postgres:15
+    container_name: weather-api-db
+    environment:
+      POSTGRES_USER: weather_user
+      POSTGRES_PASSWORD: weather_password
+      POSTGRES_DB: weather_api
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume persists database data across container restarts.
+      # Without this, every 'docker-compose down' would wipe the database.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Prevents the API container from starting before PostgreSQL
+      # is ready to accept connections. Without this, the API starts,
+      # tries to connect, fails, and crashes.
+      test: ["CMD-SHELL", "pg_isready -U weather_user -d weather_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: weather-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://weather_user:weather_password@db:5432/weather_api
+      API_KEY_SECRET: weather-api-dev-2026
+      APP_ENV: development
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      RATE_LIMIT_PER_MINUTE: 60
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Restart the API container if it crashes — keeps the service
+    # running without manual intervention.
+    restart: on-failure
+
+volumes:
+  postgres_data:
