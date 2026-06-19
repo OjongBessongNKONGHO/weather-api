@@ -140,6 +140,50 @@ def test_latest_all_returns_list(client):
     assert len(data) >= 1
 
 
+def test_latest_all_filters_by_continent(client):
+    """
+    continent=Africa must return only African cities.
+    Verifies the join filter in get_latest_readings_all_cities works
+    correctly and that no non-African city leaks into the response.
+    """
+    response = client.get(
+        "/api/v1/weather/latest?continent=Africa", headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    data = response.json()
+    for reading in data:
+        assert reading["city"]["continent"] == "Africa"
+
+
+def test_latest_all_continent_case_insensitive(client):
+    """
+    continent filter must be case-insensitive, same convention as
+    city name lookups elsewhere in the API.
+    """
+    response_lower = client.get(
+        "/api/v1/weather/latest?continent=africa", headers=AUTH_HEADERS
+    )
+    response_mixed = client.get(
+        "/api/v1/weather/latest?continent=AfRiCa", headers=AUTH_HEADERS
+    )
+    assert response_lower.status_code == 200
+    assert response_mixed.status_code == 200
+    assert len(response_lower.json()) == len(response_mixed.json())
+
+
+def test_latest_all_unknown_continent_returns_empty_list(client):
+    """
+    A continent with no matching cities returns an empty list,
+    not an error — this is correct REST behaviour for a filter
+    that legitimately matches nothing.
+    """
+    response = client.get(
+        "/api/v1/weather/latest?continent=Antarctica", headers=AUTH_HEADERS
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 # ── History endpoint ──────────────────────────────────────────────────────────
 
 

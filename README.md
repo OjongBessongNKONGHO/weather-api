@@ -4,8 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-31%20passing-success?style=flat)
-
+![Tests](https://img.shields.io/badge/Tests-34%20passing-success?style=flat)
 A REST API for weather data across 21 cities and 6 continents. Current conditions come from OpenWeatherMap. Thirty days of hourly history per city sit in PostgreSQL — 14,637 readings total. Every protected endpoint requires an API key. History responses are paginated. Statistics are aggregated inside the database, not in Python. The test suite runs in 0.54 seconds against SQLite with no network access.
 
 The architecture is deliberately layered: models define the schema, schemas control what crosses the API boundary, services own all business logic, and routers do nothing except route. That separation means the same service functions can be called from a CLI, a background job, or a second API version without rewriting logic.
@@ -17,7 +16,7 @@ The architecture is deliberately layered: models define the schema, schemas cont
 ```
 GET  /api/v1/health                    No authentication required
 GET  /api/v1/cities                    21 cities, ordered alphabetically
-GET  /api/v1/weather/latest            Current conditions for every city
+GET  /api/v1/weather/latest            Current conditions for every city (optional ?continent= filter)
 GET  /api/v1/weather/{city}/latest     Current conditions for one city
 GET  /api/v1/weather/{city}/history    Paginated history, newest first
 GET  /api/v1/weather/{city}/stats      Aggregated stats over 1–30 days
@@ -134,7 +133,7 @@ PostgreSQL starts first. The API waits for the database healthcheck before start
 make test
 ```
 
-31 tests. 0.54 seconds. No PostgreSQL, no network.
+34 tests. 0.47 seconds. No PostgreSQL, no network.
 
 **tests/test_health.py**
 - Health returns 200 with no authentication
@@ -150,6 +149,7 @@ make test
 - Unknown city returns 404
 - page=0, limit=101 and days=31 all return 422 automatically
 - Pagination metadata correct on every history response
+- Continent filter on /weather/latest returns only matching cities, case-insensitive, empty list for no matches
 
 **tests/test_weather.py::TestSeederWithMocking**
 - fetch_current_weather calls the right URL with the right parameters
@@ -226,7 +226,7 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 | Cities | 21 across 6 continents |
 | Weather readings | 14,637 (30 days hourly per city) |
 | Current data source | OpenWeatherMap API |
-| Tests | 31 passing in 0.54 seconds |
+| Tests | 34 passing in 0.47 seconds |
 | Authentication | API key — X-API-Key header |
 | Rate limit | 60 requests per minute per IP |
 | History depth | 30 days, paginated |

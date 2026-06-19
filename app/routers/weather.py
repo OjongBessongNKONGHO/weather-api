@@ -36,13 +36,17 @@ def list_cities(
     "/weather/latest",
     response_model=list[WeatherReadingResponse],
     summary="Latest readings for all cities",
-    description="Returns the most recent weather reading for every tracked city.",
+    description="Returns the most recent weather reading for every tracked city. Optionally filter by continent.",
 )
 def get_latest_all(
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
+    continent: str | None = Query(
+        default=None,
+        description="Filter results to a single continent, e.g. 'Africa', 'Europe', 'Asia'. Case-insensitive.",
+    ),
 ) -> list[WeatherReadingResponse]:
-    return weather_service.get_latest_readings_all_cities(db)
+    return weather_service.get_latest_readings_all_cities(db, continent=continent)
 
 
 @router.get(

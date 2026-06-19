@@ -55,13 +55,21 @@ def get_latest_reading_for_city(db: Session, city: City) -> WeatherReading:
     return reading
 
 
-def get_latest_readings_all_cities(db: Session) -> list[WeatherReading]:
+def get_latest_readings_all_cities(
+    db: Session,
+    continent: str | None = None,
+) -> list[WeatherReading]:
     """
     Returns the most recent reading for every city in a single query.
 
     Uses a subquery to find the maximum recorded_at per city, then
     joins back to get the full reading row. One round trip to the
     database regardless of how many cities exist.
+
+    An optional continent filter narrows the result to cities on that
+    continent only. The filter is applied via a join to City and is
+    case-insensitive, matching the same convention used by city name
+    lookups elsewhere in this module.
     """
     subquery = (
         db.query(
@@ -72,16 +80,18 @@ def get_latest_readings_all_cities(db: Session) -> list[WeatherReading]:
         .subquery()
     )
 
-    readings = (
-        db.query(WeatherReading)
-        .join(
-            subquery,
-            (WeatherReading.city_id == subquery.c.city_id)
-            & (WeatherReading.recorded_at == subquery.c.max_recorded_at),
-        )
-        .all()
+    query = db.query(WeatherReading).join(
+        subquery,
+        (WeatherReading.city_id == subquery.c.city_id)
+        & (WeatherReading.recorded_at == subquery.c.max_recorded_at),
     )
-    return readings
+
+    if continent:
+        query = query.join(City, WeatherReading.city_id == City.id).filter(
+            func.lower(City.continent) == func.lower(continent)
+        )
+
+    return query.all()
 
 
 def get_city_history(
