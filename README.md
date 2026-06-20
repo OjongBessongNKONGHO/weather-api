@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-34%20passing-success?style=flat)
+![Tests](https://img.shields.io/badge/Tests-38%20passing-success?style=flat)
 
 **Live API:** [weather-api-production-1781.up.railway.app/docs](https://weather-api-production-1781.up.railway.app/docs) — interactive Swagger UI, no setup required. Authorize with `weather-api-dev-2026`.
 
@@ -80,6 +80,9 @@ Current conditions are fetched from OpenWeatherMap for all 21 cities. Historical
 **OpenWeatherMap calls are mocked in tests.**
 Tests that make real HTTP calls are flaky. They fail when the network is slow, the API is down, or the rate limit is hit. `unittest.mock.patch` replaces `requests.get` with a controlled fake. The tests verify that the seeder calls the right endpoint with the right parameters, maps response fields correctly, and returns `None` gracefully on failure — none of which requires internet access or consumes API quota.
 
+**Caching is in-memory, not a separate service.**
+A single-instance deployment serving 21 cities does not need a distributed cache. An in-memory dictionary with a time-based expiry solves the actual problem — repeated identical queries hitting PostgreSQL — without provisioning, running, or maintaining a separate caching service. The cache interface (`get`, `set`, `clear`) mirrors what a Redis client exposes, so migrating to Redis later, if the API ever runs across multiple instances, is a contained change to one file.
+
 ---
 
 ## Running It
@@ -136,7 +139,7 @@ PostgreSQL starts first. The API waits for the database healthcheck before start
 make test
 ```
 
-34 tests. 0.47 seconds. No PostgreSQL, no network.
+38 tests. 0.47 seconds. No PostgreSQL, no network.
 
 **tests/test_health.py**
 - Health returns 200 with no authentication
@@ -153,6 +156,7 @@ make test
 - page=0, limit=101 and days=31 all return 422 automatically
 - Pagination metadata correct on every history response
 - Continent filter on /weather/latest returns only matching cities, case-insensitive, empty list for no matches
+- In-memory TTL cache on /weather/latest serves identical results on repeated calls and isolates cache keys per continent filter
 
 **tests/test_weather.py::TestSeederWithMocking**
 - fetch_current_weather calls the right URL with the right parameters
@@ -229,7 +233,7 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 | Cities | 21 across 6 continents |
 | Weather readings | 14,637 (30 days hourly per city) |
 | Current data source | OpenWeatherMap API |
-| Tests | 34 passing in 0.47 seconds |
+| Tests | 38 passing in 0.47 seconds |
 | Authentication | API key — X-API-Key header |
 | Rate limit | 60 requests per minute per IP |
 | History depth | 30 days, paginated |

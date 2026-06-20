@@ -4,6 +4,9 @@ from sqlalchemy import func, desc
 from fastapi import HTTPException, status
 from app.models.weather import City, WeatherReading
 from app.schemas.weather import WeatherStatsResponse, CityResponse
+from app.cache.memory_cache import cache
+
+CACHE_TTL_SECONDS = 300  # 5 minutes — matches the data's real update cadence
 
 
 def get_all_cities(db: Session) -> list[City]:
@@ -71,6 +74,11 @@ def get_latest_readings_all_cities(
     case-insensitive, matching the same convention used by city name
     lookups elsewhere in this module.
     """
+    cache_key = f"latest_all:{continent or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     subquery = (
         db.query(
             WeatherReading.city_id,
@@ -91,7 +99,9 @@ def get_latest_readings_all_cities(
             func.lower(City.continent) == func.lower(continent)
         )
 
-    return query.all()
+    results = query.all()
+    cache.set(cache_key, results, ttl_seconds=CACHE_TTL_SECONDS)
+    return results
 
 
 def get_city_history(

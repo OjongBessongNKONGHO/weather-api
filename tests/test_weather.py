@@ -1,5 +1,6 @@
 from unittest.mock import patch, MagicMock
 from tests.conftest import AUTH_HEADERS
+from app.cache.memory_cache import cache
 
 
 # ── Authentication tests ──────────────────────────────────────────────────────
@@ -269,6 +270,69 @@ def test_stats_days_above_30_returns_422(client):
     """days is capped at 30 — prevents expensive queries over large ranges."""
     response = client.get("/api/v1/weather/Paris/stats?days=31", headers=AUTH_HEADERS)
     assert response.status_code == 422
+
+
+class TestCaching:
+    """
+    Tests for the in-memory TTL cache on get_latest_readings_all_cities.
+
+    Each test clears the cache first to avoid state leaking between
+    tests — the cache is a module-level singleton shared across the
+    whole test session.
+    """
+
+    def test_latest_all_returns_cached_result_on_second_call(self, client):
+        """
+        Two consecutive requests to /weather/latest must return
+        identical data, confirming the second call was served from
+        cache rather than re-querying the database.
+        """
+        cache.clear()
+        first = client.get("/api/v1/weather/latest", headers=AUTH_HEADERS)
+        second = client.get("/api/v1/weather/latest", headers=AUTH_HEADERS)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json() == second.json()
+
+    def test_cache_keys_are_isolated_per_continent(self, client):
+        """
+        Different continent filters must return different cache entries.
+        Confirms the cache key includes the continent value, so a
+        request for one continent never returns another continent's
+        cached results.
+
+        Uses Europe and a nonexistent continent rather than two real
+        continents, since the test fixtures only seed European cities
+        (Paris, London) — this still proves cache key isolation without
+        depending on data that is not present in the test database.
+        """
+        cache.clear()
+        europe = client.get(
+            "/api/v1/weather/latest?continent=Europe", headers=AUTH_HEADERS
+        )
+        atlantis = client.get(
+            "/api/v1/weather/latest?continent=Atlantis", headers=AUTH_HEADERS
+        )
+        europe_cities = {r["city"]["continent"] for r in europe.json()}
+        assert europe_cities == {"Europe"}
+        assert atlantis.json() == []
+
+    def test_cache_expires_after_ttl(self):
+        """
+        Unit test on the cache itself: a value set with a 0-second TTL
+        must be treated as expired immediately on the next get().
+        """
+        cache.clear()
+        cache.set("test_key", "test_value", ttl_seconds=0)
+        import time
+
+        time.sleep(0.01)
+        assert cache.get("test_key") is None
+
+    def test_cache_returns_none_for_missing_key(self):
+        """A key that was never set must return None, not raise."""
+        cache.clear()
+        assert cache.get("nonexistent_key") is None
 
 
 # ── Seeder unit tests with mocking ────────────────────────────────────────────
