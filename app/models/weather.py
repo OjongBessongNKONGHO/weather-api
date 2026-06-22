@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from sqlalchemy.orm import relationship
 from sqlalchemy import (
     Column,
@@ -63,7 +63,7 @@ class WeatherReading(Base):
     cloudiness = Column(Integer, nullable=False)
     visibility = Column(Integer, nullable=False)
     recorded_at = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None), nullable=False)
     city = relationship(
         "City", foreign_keys=[city_id], primaryjoin="WeatherReading.city_id == City.id"
     )
