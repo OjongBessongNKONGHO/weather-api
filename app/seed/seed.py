@@ -1,6 +1,6 @@
 import random
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, UTC
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app.models.weather import City, WeatherReading
@@ -239,7 +239,7 @@ def parse_current_weather(data: dict, city_id: int) -> WeatherReading:
         description=data["weather"][0]["description"],
         cloudiness=data["clouds"]["all"],
         visibility=data.get("visibility", 10000),
-        recorded_at=datetime.utcnow().replace(minute=0, second=0, microsecond=0),
+        recorded_at=datetime.now(UTC).replace(minute=0, second=0, microsecond=0, tzinfo=None),
     )
 
 
@@ -313,7 +313,7 @@ def seed(db: Session) -> None:
         db.refresh(city)
 
     print("Fetching real current weather and generating history...")
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0, tzinfo=None)
 
     for city_obj, city_data in zip(city_objects, CITIES):
         readings = []
