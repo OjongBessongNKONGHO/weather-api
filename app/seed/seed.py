@@ -239,7 +239,9 @@ def parse_current_weather(data: dict, city_id: int) -> WeatherReading:
         description=data["weather"][0]["description"],
         cloudiness=data["clouds"]["all"],
         visibility=data.get("visibility", 10000),
-        recorded_at=datetime.now(UTC).replace(minute=0, second=0, microsecond=0, tzinfo=None),
+        recorded_at=datetime.now(UTC).replace(
+            minute=0, second=0, microsecond=0, tzinfo=None
+        ),
     )
 
 
