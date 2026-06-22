@@ -1,15 +1,21 @@
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
-
     pydantic-settings automatically reads from the .env file and
     validates every value at startup. If a required variable is missing,
     the app refuses to start — you catch configuration errors immediately,
     not at runtime when a request fails.
     """
+
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
     # Database
     database_url: str
@@ -27,11 +33,6 @@ class Settings(BaseSettings):
 
     # OpenWeatherMap
     openweather_api_key: str
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
 
 # Single instance shared across the entire app.
