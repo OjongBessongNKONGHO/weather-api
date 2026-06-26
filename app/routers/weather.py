@@ -55,6 +55,26 @@ def get_latest_all(
 
 
 @router.get(
+    "/weather/{city_name}/stats",
+    response_model=WeatherStatsResponse,
+    summary="Weather statistics for a city",
+    description="Returns aggregated min, max and average statistics over a requested number of days (1-30).",
+)
+@limiter.limit("60/minute")
+def get_city_stats(
+    request: Request,
+    city_name: str,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+    days: int = Query(
+        default=7, ge=1, le=30, description="Number of days to include, maximum 30"
+    ),
+) -> WeatherStatsResponse:
+    city = weather_service.get_city_by_name(db, city_name)
+    return weather_service.get_city_stats(db, city, days)
+
+
+@router.get(
     "/weather/{city_name}/latest",
     response_model=WeatherReadingResponse,
     summary="Latest reading for a city",
@@ -109,23 +129,3 @@ def get_city_history(
         limit=limit,
         total_pages=total_pages,
     )
-
-
-@router.get(
-    "/weather/{city_name}/stats",
-    response_model=WeatherStatsResponse,
-    summary="Weather statistics for a city",
-    description="Returns aggregated min, max and average statistics over a requested number of days (1-30).",
-)
-@limiter.limit("60/minute")
-def get_city_stats(
-    request: Request,
-    city_name: str,
-    db: Session = Depends(get_db),
-    _: str = Depends(require_api_key),
-    days: int = Query(
-        default=7, ge=1, le=30, description="Number of days to include, maximum 30"
-    ),
-) -> WeatherStatsResponse:
-    city = weather_service.get_city_by_name(db, city_name)
-    return weather_service.get_city_stats(db, city, days)
