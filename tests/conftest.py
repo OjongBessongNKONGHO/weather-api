@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.database import Base, get_db
 from app.models.weather import City, WeatherReading
-from datetime import datetime
+from datetime import datetime, timedelta, UTC
 
 # Use an in-memory SQLite database for tests.
 # This means tests never touch your real PostgreSQL database —
@@ -109,7 +109,7 @@ def seed_test_data(db):
             description="light rain",
             cloudiness=100,
             visibility=10000,
-            recorded_at=datetime(2026, 6, 18, 19, 0, 0),
+            recorded_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1),
         ),
         WeatherReading(
             city_id=paris.id,
@@ -122,7 +122,7 @@ def seed_test_data(db):
             description="few clouds",
             cloudiness=20,
             visibility=10000,
-            recorded_at=datetime(2026, 6, 18, 18, 0, 0),
+            recorded_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=2),
         ),
         WeatherReading(
             city_id=london.id,
@@ -135,7 +135,7 @@ def seed_test_data(db):
             description="clear sky",
             cloudiness=0,
             visibility=10000,
-            recorded_at=datetime(2026, 6, 18, 19, 0, 0),
+            recorded_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1),
         ),
     ]
     db.add_all(readings)
