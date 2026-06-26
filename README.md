@@ -218,7 +218,7 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 ### 422 — Invalid Query Parameter Rejected Automatically
 ![422](docs/images/validation-422.png)
 
-### Test Suite — 31 Passing in 0.54 Seconds
+### Test Suite — 38 Passing in 0.47 Seconds
 ![Tests](docs/images/tests-passing.png)
 
 ### Seeder — Real Temperatures Fetched for All 21 Cities
