@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.limiter import limiter
 from app.middleware.auth import require_api_key
 from app.schemas.weather import (
     CityResponse,
@@ -19,7 +20,9 @@ router = APIRouter()
     summary="List all cities",
     description="Returns all 21 cities tracked by the API, ordered alphabetically.",
 )
+@limiter.limit("60/minute")
 def list_cities(
+    request: Request,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
 ) -> list[CityResponse]:
@@ -38,7 +41,9 @@ def list_cities(
     summary="Latest readings for all cities",
     description="Returns the most recent weather reading for every tracked city. Optionally filter by continent.",
 )
+@limiter.limit("60/minute")
 def get_latest_all(
+    request: Request,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
     continent: str | None = Query(
@@ -55,7 +60,9 @@ def get_latest_all(
     summary="Latest reading for a city",
     description="Returns the most recent weather reading for the specified city.",
 )
+@limiter.limit("60/minute")
 def get_latest_for_city(
+    request: Request,
     city_name: str,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
@@ -71,7 +78,9 @@ def get_latest_for_city(
     summary="Historical readings for a city",
     description="Returns paginated weather history for the specified city, newest first.",
 )
+@limiter.limit("60/minute")
 def get_city_history(
+    request: Request,
     city_name: str,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
@@ -108,7 +117,9 @@ def get_city_history(
     summary="Weather statistics for a city",
     description="Returns aggregated min, max and average statistics over a requested number of days (1-30).",
 )
+@limiter.limit("60/minute")
 def get_city_stats(
+    request: Request,
     city_name: str,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
