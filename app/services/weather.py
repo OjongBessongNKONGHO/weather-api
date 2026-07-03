@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from fastapi import HTTPException, status
@@ -153,7 +153,7 @@ def get_city_stats(
             detail="days must be between 1 and 30.",
         )
 
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
 
     result = (
         db.query(
