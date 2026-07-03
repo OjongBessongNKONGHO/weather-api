@@ -6,7 +6,8 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter
 from app.config import settings
-from app.database import engine, Base
+from app.database import get_db
+from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import weather, health
 
 
@@ -47,6 +48,7 @@ app = FastAPI(
 # can intercept requests and enforce per-IP limits.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(RequestLoggingMiddleware)
 
 # CORS — controls which origins can call this API from a browser.
 # In development we allow all origins. In production you would
