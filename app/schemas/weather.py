@@ -89,9 +89,22 @@ class PaginatedWeatherResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
+    """
+    Health check response.
+
+    database_latency_ms measures the round-trip time of a SELECT 1
+    query against PostgreSQL. This distinguishes between a database
+    that is reachable but slow (high latency) and one that is down
+    (unavailable). Load balancers and monitoring tools use this value
+    to detect degraded performance before it becomes an outage.
+    A None value means the database was unreachable.
+    """
 
     status: str
     database: str
+    database_latency_ms: float | None = Field(
+        default=None,
+        description="Database round-trip latency in milliseconds. None if database is unreachable.",
+    )
     version: str
     environment: str
