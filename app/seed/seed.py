@@ -1,10 +1,17 @@
+import logging
 import random
 import requests
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
-from app.database import SessionLocal, engine, Base
+from app.database import SessionLocal
 from app.models.weather import City, WeatherReading
 from app.config import settings
+
+# Configure module-level logger.
+# In production, log level and handlers are configured once at application
+# startup — every module just gets a logger by name and the root configuration
+# controls where logs go (stdout, file, CloudWatch, Datadog, etc.).
+logger = logging.getLogger(__name__)
 
 # Fixed seed for reproducible historical data generation.
 # Current readings come from the real API — history is generated
@@ -217,7 +224,7 @@ def fetch_current_weather(lat: float, lon: float) -> dict | None:
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        print(f"  Warning: API call failed ({e}). Using generated data.")
+        logger.warning("API call failed (%s). Using generated data.", e)
         return None
 
 
@@ -299,10 +306,10 @@ def seed(db: Session) -> None:
     """
     existing = db.query(City).count()
     if existing > 0:
-        print("Database already seeded. Skipping.")
+        logger.info("Database already seeded. Skipping.")
         return
 
-    print("Seeding cities...")
+    logger.info("Seeding %d cities.", len(CITIES))
     city_objects = []
     for city_data in CITIES:
         city = City(**city_data)
@@ -314,7 +321,7 @@ def seed(db: Session) -> None:
     for city in city_objects:
         db.refresh(city)
 
-    print("Fetching real current weather and generating history...")
+    logger.info("Fetching real current weather and generating 30 days of history.")
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0, tzinfo=None)
 
     for city_obj, city_data in zip(city_objects, CITIES):
@@ -326,14 +333,16 @@ def seed(db: Session) -> None:
         if raw:
             current_reading = parse_current_weather(raw, city_obj.id)
             current_temp = current_reading.temperature
-            print(f"  {city_obj.name}: {current_temp}°C — real data fetched")
+            logger.info("%-20s %.1f°C — real data fetched", city_obj.name, current_temp)
         else:
             # Fallback: generate current reading if API failed
             current_temp = random.uniform(15, 30)
             current_reading = generate_historical_reading(
                 city_obj.id, current_temp, now
             )
-            print(f"  {city_obj.name}: API unavailable — using generated data")
+            logger.warning(
+                "%-20s API unavailable — using generated data.", city_obj.name
+            )
 
         # Generate 29 days of hourly history (most recent hour excluded,
         # that is covered by the real current reading above)
@@ -351,13 +360,20 @@ def seed(db: Session) -> None:
         db.commit()
 
     total = len(city_objects) * 29 * 24 + len(city_objects)
-    print(f"\nDone. {len(city_objects)} cities, {total} total readings.")
-    print("Current conditions: real data from OpenWeatherMap")
-    print("Historical data: generated, anchored to real current temperature")
+    logger.info(
+        "Seeding complete — %d cities, %d total readings. "
+        "Current conditions from OpenWeatherMap, history anchored to real temperatures.",
+        len(city_objects),
+        total,
+    )
 
 
 if __name__ == "__main__":
-    Base.metadata.create_all(bind=engine)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     db = SessionLocal()
     try:
         seed(db)
