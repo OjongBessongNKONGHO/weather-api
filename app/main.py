@@ -14,17 +14,19 @@ from app.routers import weather, health
 async def lifespan(app: FastAPI):
     """
     Code that runs once at startup and once at shutdown.
-
     The asynccontextmanager pattern replaced the older @app.on_event
     approach in modern FastAPI. Everything before 'yield' runs on
     startup, everything after runs on shutdown.
 
-    Creating tables here means the app is self-bootstrapping —
-    running it for the first time automatically creates the schema.
-    In production you would use Alembic migrations instead, but for
-    local development this is clean and practical.
+    Schema management is handled by Alembic migrations — not create_all.
+    Running create_all in production is dangerous because it cannot
+    handle schema evolution: adding a column, changing a type, or adding
+    an index requires a versioned migration script, not a blunt create_all
+    that silently does nothing if the table already exists.
+
+    To apply migrations: alembic upgrade head
+    To create a new migration: alembic revision -m "description"
     """
-    Base.metadata.create_all(bind=engine)
     yield
 
 
