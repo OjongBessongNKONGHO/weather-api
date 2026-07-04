@@ -83,6 +83,15 @@ Tests that make real HTTP calls are flaky. They fail when the network is slow, t
 **Caching is in-memory, not a separate service.**
 A single-instance deployment serving 21 cities does not need a distributed cache. An in-memory dictionary with a time-based expiry solves the actual problem — repeated identical queries hitting PostgreSQL — without provisioning, running, or maintaining a separate caching service. The cache interface (`get`, `set`, `clear`) mirrors what a Redis client exposes, so migrating to Redis later, if the API ever runs across multiple instances, is a contained change to one file.
 
+- **Request logging middleware** — every request logged with method, path, status code and response time in milliseconds
+- **Structured logging** — centralised logging configuration with timestamps and log levels across all modules
+- **Database latency monitoring** — health endpoint measures and returns PostgreSQL round-trip time in milliseconds
+- **Alembic migrations** — versioned schema management replacing `create_all` for safe production deployments
+- **Request logging middleware** — every request logged with method, path, status code and response time in milliseconds using a Starlette `BaseHTTPMiddleware` — no changes needed in route handlers
+- **Structured logging** — centralised `logging_config.py` configures timestamps, log levels and module names once at startup — every module inherits the configuration automatically
+- **Database latency monitoring** — the `/health` endpoint measures PostgreSQL round-trip time in milliseconds, distinguishing a slow database from a down one
+- **Alembic migrations** — versioned schema management with `upgrade()` and `downgrade()` functions replacing `create_all`, making schema evolution safe in production
+
 ---
 
 ## Running It
