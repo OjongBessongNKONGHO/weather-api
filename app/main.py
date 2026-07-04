@@ -10,7 +10,7 @@ from app.database import get_db
 from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import weather, health
 from app.logging_config import configure_logging
-from app.routers import weather, health
+
 
 # Configure logging at module load time — before the app starts handling
 # requests. This ensures every logger across all modules inherits the
@@ -20,7 +20,6 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
     """
     Code that runs once at startup and once at shutdown.
     The asynccontextmanager pattern replaced the older @app.on_event
