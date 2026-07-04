@@ -9,10 +9,13 @@ from app.config import settings
 from app.database import get_db
 from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import weather, health
+from app.logging_config import configure_logging
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
+    yield
     """
     Code that runs once at startup and once at shutdown.
     The asynccontextmanager pattern replaced the older @app.on_event
