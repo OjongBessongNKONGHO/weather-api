@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-38%20passing-success?style=flat)
+![Tests](https://img.shields.io/badge/Tests-41%20passing-success?style=flat)
 
 **Live API:** [weather-api-production-1781.up.railway.app/docs](https://weather-api-production-1781.up.railway.app/docs) — interactive Swagger UI, no setup required. Authorize with `weather-api-dev-2026`.
 
@@ -147,8 +147,7 @@ PostgreSQL starts first. The API waits for the database healthcheck before start
 ```bash
 make test
 ```
-
-38 tests. 0.47 seconds. No PostgreSQL, no network.
+41 tests. 0.5 seconds. No PostgreSQL, no network.
 
 **tests/test_health.py**
 - Health returns 200 with no authentication
@@ -174,6 +173,13 @@ make test
 - generate_historical_reading stays within plausible temperature variance
 
 The four mock tests use `unittest.mock.patch` to intercept `requests.get` before it reaches the network. Each test controls exactly what the fake response contains and verifies the seeder's behaviour in isolation.
+
+**tests/test_rate_limit.py**
+- First 60 requests to a rate-limited endpoint succeed, the 61st returns 429
+- 429 response body reports the actual limit, not just a bare status code
+- Exhausting the limit on one endpoint doesn't block a different endpoint — each route tracks its own budget
+
+`limiter.reset()` is called before and after each test. The test client is shared across the whole suite and slowapi keys its limit by client IP, which the test client always reports identically — without resetting, these tests would be order-dependent on whatever ran before them, and would leave the limiter blown for whatever runs after.
 
 ---
 
@@ -227,7 +233,7 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 ### 422 — Invalid Query Parameter Rejected Automatically
 ![422](docs/images/validation-422.png)
 
-### Test Suite — 38 Passing in 0.47 Seconds
+### Test Suite — 41 Passing in 0.83 Seconds
 ![Tests](docs/images/tests-passing.png)
 
 ### Seeder — Real Temperatures Fetched for All 21 Cities
@@ -242,7 +248,7 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 | Cities | 21 across 6 continents |
 | Weather readings | 14,637 (30 days hourly per city) |
 | Current data source | OpenWeatherMap API |
-| Tests | 38 passing in 0.47 seconds |
+| Tests | 41 passing in 0.5 seconds |
 | Authentication | API key — X-API-Key header |
 | Rate limit | 60 requests per minute per IP |
 | History depth | 30 days, paginated |
