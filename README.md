@@ -185,7 +185,7 @@ The four mock tests use `unittest.mock.patch` to intercept `requests.get` before
 
 ## What Went Wrong
 
-Three real problems hit during development. They are documented here because the fixes are more instructive than the features.
+Four real problems hit during development. They are documented here because the fixes are more instructive than the features.
 
 **500 on `/weather/{city}/latest` — missing SQLAlchemy relationship**
 
@@ -193,17 +193,23 @@ The `WeatherReadingResponse` schema includes a nested `city` object. The `Weathe
 
 Fix: added `relationship("City")` to `WeatherReading` and changed `city_id` from a plain `Integer` column to `Integer, ForeignKey("cities.id")`. The ORM could then eager-load the city in the same query. The 500 became a 200.
 
-**`DATA_SOURCE_NOT_FOUND: delta` in CI — Spark session conflict**
+**`MissingGreenlet` after migrating to async SQLAlchemy — lazy relationship loading isn't safe in async mode**
 
-In the Spark Structured Streaming project, Delta Lake integration tests passed locally but failed in GitHub Actions. The test suite runs `test_consumer.py` before `test_delta_lake_integration.py`. The consumer tests create a Spark session without the Delta extension loaded. Spark sessions are JVM singletons — the Delta test fixture inherited the existing session, which had no Delta JARs on its classpath.
+Migrating the service layer from `Session` to `AsyncSession` meant rewriting every query from `.query()` to `select()` + `await db.execute()`. That part was mechanical. What wasn't obvious: accessing `reading.city` afterward — a lazy-loaded relationship — raised `MissingGreenlet`, because lazy loading normally triggers a synchronous query behind the scenes, and that isn't safe to do implicitly inside an async session.
 
-Fix: set `PYSPARK_SUBMIT_ARGS` at module level in the Delta test file to load the Delta JARs at JVM startup, before any session is created. The environment variable is read by the JVM launcher, not by Python, so it must be set before the JVM initialises.
+Fix: added `.options(selectinload(WeatherReading.city))` to every query whose response includes the nested `city` object, forcing SQLAlchemy to eager-load it in the same round trip instead of lazily on attribute access.
 
-**winutils.exe error=216 — Spark tests failing locally on Windows**
+**SQLite rejected `pool_size` and `max_overflow` — CI broke after the same migration**
 
-Hadoop requires `winutils.exe` on Windows to handle filesystem permission calls. The binary at `C:\hadoop\bin\winutils.exe` produced error code 216 — incompatible executable format — which means it was compiled for a different architecture variant despite the machine being 64-bit. The correct binary also requires `hadoop.dll` to be present in the same directory.
+`pool_size` and `max_overflow` tune a real connection pool, a concept that only applies to server-based databases. CI runs tests against SQLite (via `aiosqlite`) for speed, and SQLite's default `NullPool` doesn't support pooling at all — it rejected both arguments outright and crashed on import, before a single test could run. This never showed up locally, since the local `.env` points at real PostgreSQL, where those arguments are valid.
 
-Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop 3.3.1 from the `kontext-tech/winutils` repository. All 7 Delta Lake integration tests passed locally after replacing both files.
+Fix: made both arguments conditional — only passed to `create_async_engine` when the database URL isn't SQLite. PostgreSQL still gets its tuned pool in production; SQLite in tests gets neither, since it has no pool to tune.
+
+**Production crashed on Railway — an auto-generated `DATABASE_URL` pointed at a driver that no longer existed**
+
+Switching from `psycopg2` to `psycopg3` (to share one driver between Alembic's sync migrations and the app's async runtime) meant `psycopg2-binary` was removed from `requirements.txt`. Railway's `DATABASE_URL` variable was a live reference to the Postgres service's own auto-generated connection string — plain `postgresql://`, which SQLAlchemy resolves to `psycopg2` by default. The moment `psycopg2-binary` was gone, that reference broke, and the deployment crashed on the next `import`.
+
+Fix: rebuilt the variable explicitly from the individual `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` values Railway exposes, with the driver stated up front: `postgresql+psycopg://...`. Same credentials, explicit driver, no more silent default.
 
 ---
 
@@ -262,7 +268,8 @@ Fix: downloaded `winutils.exe` and `hadoop.dll` compiled specifically for Hadoop
 |-------|------------|
 | Framework | FastAPI 0.111 |
 | Database | PostgreSQL 15 |
-| ORM | SQLAlchemy 2.0 |
+| ORM | SQLAlchemy 2.0 (async) |
+| Driver | psycopg3 — one driver for both Alembic's sync migrations and the app's async runtime |
 | Validation | Pydantic v2 |
 | Authentication | API key — X-API-Key header |
 | Rate limiting | slowapi — 60 requests per minute |
