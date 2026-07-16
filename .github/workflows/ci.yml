@@ -29,7 +29,7 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: sqlite:///./test.db
+          DATABASE_URL: sqlite+aiosqlite:///./test.db
           API_KEY_SECRET: weather-api-dev-2026
           APP_ENV: testing
           APP_HOST: 0.0.0.0
