@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.limiter import limiter
 from app.middleware.auth import require_api_key
@@ -21,18 +21,12 @@ router = APIRouter()
     description="Returns all 21 cities tracked by the API, ordered alphabetically.",
 )
 @limiter.limit("60/minute")
-def list_cities(
+async def list_cities(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(require_api_key),
 ) -> list[CityResponse]:
-    """
-    The underscore _ for the api_key parameter is a Python convention
-    meaning 'this value is required but not used in the function body'.
-    The dependency runs and validates the key — we just don't need
-    the key value itself inside the function.
-    """
-    return weather_service.get_all_cities(db)
+    return await weather_service.get_all_cities(db)
 
 
 @router.get(
@@ -42,16 +36,16 @@ def list_cities(
     description="Returns the most recent weather reading for every tracked city. Optionally filter by continent.",
 )
 @limiter.limit("60/minute")
-def get_latest_all(
+async def get_latest_all(
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(require_api_key),
     continent: str | None = Query(
         default=None,
         description="Filter results to a single continent, e.g. 'Africa', 'Europe', 'Asia'. Case-insensitive.",
     ),
 ) -> list[WeatherReadingResponse]:
-    return weather_service.get_latest_readings_all_cities(db, continent=continent)
+    return await weather_service.get_latest_readings_all_cities(db, continent=continent)
 
 
 @router.get(
@@ -61,17 +55,17 @@ def get_latest_all(
     description="Returns aggregated min, max and average statistics over a requested number of days (1-30).",
 )
 @limiter.limit("60/minute")
-def get_city_stats(
+async def get_city_stats(
     request: Request,
     city_name: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(require_api_key),
     days: int = Query(
         default=7, ge=1, le=30, description="Number of days to include, maximum 30"
     ),
 ) -> WeatherStatsResponse:
-    city = weather_service.get_city_by_name(db, city_name)
-    return weather_service.get_city_stats(db, city, days)
+    city = await weather_service.get_city_by_name(db, city_name)
+    return await weather_service.get_city_stats(db, city, days)
 
 
 @router.get(
@@ -81,14 +75,14 @@ def get_city_stats(
     description="Returns the most recent weather reading for the specified city.",
 )
 @limiter.limit("60/minute")
-def get_latest_for_city(
+async def get_latest_for_city(
     request: Request,
     city_name: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(require_api_key),
 ) -> WeatherReadingResponse:
-    city = weather_service.get_city_by_name(db, city_name)
-    reading = weather_service.get_latest_reading_for_city(db, city)
+    city = await weather_service.get_city_by_name(db, city_name)
+    reading = await weather_service.get_latest_reading_for_city(db, city)
     return reading
 
 
@@ -99,27 +93,20 @@ def get_latest_for_city(
     description="Returns paginated weather history for the specified city, newest first.",
 )
 @limiter.limit("60/minute")
-def get_city_history(
+async def get_city_history(
     request: Request,
     city_name: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     _: str = Depends(require_api_key),
     page: int = Query(default=1, ge=1, description="Page number, starting at 1"),
     limit: int = Query(
         default=20, ge=1, le=100, description="Records per page, maximum 100"
     ),
 ) -> PaginatedWeatherResponse:
-    """
-    Query parameters with validation baked in:
-    - page must be >= 1 (ge=1 means 'greater than or equal to 1')
-    - limit must be between 1 and 100 (ge=1, le=100)
-
-    FastAPI validates these automatically and returns a 422 with a clear
-    error message if a consumer sends page=0 or limit=500 — no manual
-    validation code needed.
-    """
-    city = weather_service.get_city_by_name(db, city_name)
-    readings, total_count = weather_service.get_city_history(db, city, page, limit)
+    city = await weather_service.get_city_by_name(db, city_name)
+    readings, total_count = await weather_service.get_city_history(
+        db, city, page, limit
+    )
     total_pages = -(-total_count // limit)  # ceiling division without math.ceil
 
     return PaginatedWeatherResponse(

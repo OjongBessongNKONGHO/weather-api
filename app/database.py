@@ -1,52 +1,52 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
-
 
 # The engine is the connection to the database.
 # It manages the connection pool — instead of opening a new connection
 # for every request (expensive), it keeps a pool of reusable connections.
 # pool_pre_ping=True checks if a connection is still alive before using it,
 # preventing errors after the database restarts.
-engine = create_engine(
+#
+# create_async_engine (not create_engine) makes every query non-blocking:
+# while PostgreSQL is processing a query, this worker is free to handle
+# other requests instead of sitting idle waiting on the network round trip.
+engine = create_async_engine(
     settings.database_url,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
 )
 
-
-# SessionLocal is a factory that creates database sessions.
-# Each request gets its own session — an isolated unit of work.
-# autocommit=False means changes are only saved when you explicitly commit.
-# autoflush=False means SQLAlchemy won't automatically send pending changes
-# to the database before every query — we control when that happens.
-SessionLocal = sessionmaker(
+# async_sessionmaker is the async equivalent of sessionmaker.
+# expire_on_commit=False keeps model attributes readable after a commit
+# without needing an extra awaited refresh — without this, accessing an
+# attribute on an object right after commit() raises an error, because
+# SQLAlchemy would normally re-fetch it lazily, which isn't safe to do
+# implicitly in async code.
+AsyncSessionLocal = async_sessionmaker(
     bind=engine,
-    autocommit=False,
     autoflush=False,
+    expire_on_commit=False,
 )
 
 
 # Base class for all SQLAlchemy models.
-# Every model (table definition) inherits from this.
+# Every model (table definition) inherits from this. Unchanged from the
+# sync version — model declarations don't know or care whether queries
+# against them are sync or async.
 class Base(DeclarativeBase):
     pass
 
 
-def get_db():
+async def get_db():
     """
     Dependency that provides a database session to each request.
 
-    FastAPI's dependency injection calls this function for every request
-    that needs database access. The 'yield' turns it into a context manager:
-    - Before yield: open the session
-    - After yield: close the session (even if an error occurred)
-
-    This guarantees no session is ever left open, preventing connection leaks.
+    FastAPI calls this for every request that needs database access.
+    'async with' replaces the old try/finally — it opens the session,
+    yields it to the request handler, and guarantees it's closed
+    afterward even if the request raised an exception.
     """
-    db = SessionLocal()
-    try:
+    async with AsyncSessionLocal() as db:
         yield db
-    finally:
-        db.close()

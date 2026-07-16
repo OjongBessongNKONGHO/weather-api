@@ -1,7 +1,7 @@
 import time
 import logging
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.schemas.weather import HealthResponse
@@ -17,7 +17,7 @@ router = APIRouter()
     summary="Health check",
     description="Returns API status, database connectivity and database latency. No authentication required.",
 )
-def health_check(db: Session = Depends(get_db)) -> HealthResponse:
+async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
     """
     Verifies the API is running and the database is reachable.
 
@@ -35,16 +35,14 @@ def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     """
     db_status = "unavailable"
     latency_ms = None
-
     try:
         start = time.perf_counter()
-        db.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
         db_status = "connected"
         logger.debug("Database health check passed in %.2fms", latency_ms)
     except Exception as e:
         logger.error("Database health check failed: %s", e)
-
     return HealthResponse(
         status="ok",
         database=db_status,

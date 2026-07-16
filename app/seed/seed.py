@@ -2,11 +2,20 @@ import logging
 import random
 import requests
 from datetime import datetime, timedelta, UTC
-from sqlalchemy.orm import Session
-from app.database import SessionLocal
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 from app.models.weather import City, WeatherReading
 from app.config import settings
 
+# This is a standalone CLI script (run via `python -m app.seed.seed`), not
+# part of the request-serving app — it runs once, sequentially, so it has
+# no need for async I/O. It gets its own small synchronous engine here
+# rather than importing from app.database (which is async-only), the same
+# reasoning that keeps Alembic's migrations synchronous. psycopg3 speaks
+# both sync and async from the same driver, so this reuses the exact same
+# DATABASE_URL with no extra configuration needed.
+_sync_engine = create_engine(settings.database_url)
+SessionLocal = sessionmaker(bind=_sync_engine)
 # Configure module-level logger.
 # In production, log level and handlers are configured once at application
 # startup — every module just gets a logger by name and the root configuration
