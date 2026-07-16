@@ -11,12 +11,17 @@ from app.config import settings
 # create_async_engine (not create_engine) makes every query non-blocking:
 # while PostgreSQL is processing a query, this worker is free to handle
 # other requests instead of sitting idle waiting on the network round trip.
-engine = create_async_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+# pool_size and max_overflow tune a real connection pool - a concept that
+# only applies to server-based databases like PostgreSQL. SQLite has no
+# such pool (it uses NullPool by default) and rejects these arguments
+# outright, which is exactly what broke CI: tests run against SQLite,
+# where these two kwargs are meaningless, not just unnecessary.
+engine_kwargs = {"pool_pre_ping": True}
+if not settings.database_url.startswith("sqlite"):
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
+engine = create_async_engine(settings.database_url, **engine_kwargs)
 
 # async_sessionmaker is the async equivalent of sessionmaker.
 # expire_on_commit=False keeps model attributes readable after a commit
