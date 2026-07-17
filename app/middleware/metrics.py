@@ -19,6 +19,7 @@ The /metrics endpoint itself is excluded: scraping every 5 seconds
 would otherwise pollute the request histogram with Prometheus's own
 traffic.
 """
+
 import time
 
 from fastapi import Request

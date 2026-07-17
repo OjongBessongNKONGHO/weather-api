@@ -18,6 +18,7 @@ The default buckets top out at 10s and waste resolution on ranges this
 API never hits. Ours concentrate resolution between 1ms and 1s, which
 is where a DB-backed read API actually lives.
 """
+
 from prometheus_client import Counter, Gauge, Histogram
 
 # Request duration by route template, method and status class.

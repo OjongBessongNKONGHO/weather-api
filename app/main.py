@@ -7,7 +7,7 @@ import asyncio
 # any real DB call on a Windows dev machine dies with InterfaceError.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -76,9 +76,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     The 429 response itself is unchanged — we only add observability.
     """
     route = request.scope.get("route")
-    rate_limit_rejections_total.labels(
-        route=route.path if route else "unmatched"
-    ).inc()
+    rate_limit_rejections_total.labels(route=route.path if route else "unmatched").inc()
     return _rate_limit_exceeded_handler(request, exc)
 
 
