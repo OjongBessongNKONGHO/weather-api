@@ -6,7 +6,6 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
 ![Tests](https://img.shields.io/badge/Tests-41%20passing-success?style=flat)
 
-**Live API:** [weather-api-production-1781.up.railway.app/docs](https://weather-api-production-1781.up.railway.app/docs) — interactive Swagger UI, no setup required. Authorize with `weather-api-dev-2026`.
 
 A REST API for weather data across 21 cities and 6 continents. Current conditions come from OpenWeatherMap. Thirty days of hourly history per city sit in PostgreSQL — 14,637 readings total. Every protected endpoint requires an API key. History responses are paginated. Statistics are aggregated inside the database, not in Python. The test suite runs in 0.54 seconds against SQLite with no network access.
 
@@ -138,7 +137,7 @@ Alternative documentation UI available at `http://localhost:8000/redoc`.
 docker-compose up
 ```
 
-PostgreSQL starts first. The API waits for the database healthcheck before starting — no manual sequencing needed.
+PostgreSQL starts first. The API waits for the database healthcheck before starting — no manual sequencing needed. Prometheus starts alongside the API and scrapes `/metrics` every 5 seconds. Grafana is available at `http://localhost:3000` (login: admin / admin) with Prometheus pre-configured as a data source.
 
 ---
 
@@ -211,7 +210,30 @@ Switching from `psycopg2` to `psycopg3` (to share one driver between Alembic's s
 
 Fix: rebuilt the variable explicitly from the individual `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` values Railway exposes, with the driver stated up front: `postgresql+psycopg://...`. Same credentials, explicit driver, no more silent default.
 
+**Windows dev environment crashed on first real DB request — psycopg3 incompatible with uvicorn's ProactorEventLoop**
+
+Adding Prometheus metrics required running the full stack locally against PostgreSQL for the first time since the psycopg3 migration. Every previous local run used SQLite (tests) or Railway (production). The first real DB request crashed with `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop'` — psycopg3's async mode requires the selector-based event loop, but uvicorn on Windows sets ProactorEventLoop after import, overriding any policy set in application code.
+
+Fix: `run.py` owns the event loop directly — creates a `WindowsSelectorEventLoop`, sets it as the running loop, then passes it to `uvicorn.Server` via `loop.run_until_complete(server.serve())`. Uvicorn runs inside the loop we created rather than creating its own. Guarded with `sys.platform == "win32"` so Linux (CI, production) is untouched.
+
 ---
+
+## Observability
+
+The API exposes a `/metrics` endpoint in Prometheus text format, scraped every 5 seconds by Prometheus and visualised in Grafana.
+
+Four instruments, each motivated by something real:
+
+**`http_request_duration_seconds`** — histogram labelled by route template, method, and status code. Route template (`/api/v1/weather/{city}/latest`) not raw path (`/api/v1/weather/Paris/latest`) — one label value per route pattern instead of one per city name, typo, and scanner probe. This is the classic Prometheus cardinality mistake; the middleware reads `request.scope["route"]` after routing resolves, which is the only place the template is available.
+
+**`rate_limit_rejections_total`** — counter incremented on every 429. Wraps slowapi's stock handler so the response is byte-for-byte identical; the only addition is observability.
+
+**`cache_operations_total`** — hit/miss counter on the in-memory TTL cache. Shows whether the 5-minute TTL is actually absorbing database load or whether every request still reaches PostgreSQL.
+
+**`db_pool_checked_out` / `db_pool_size`** — pool gauges read from the engine at scrape time. Motivated by a real incident: a pool misconfiguration crashed this service in production. These gauges make pool exhaustion visible before requests start failing. Guarded for SQLite (NullPool has no pool accounting), matching the same asymmetry that broke CI during the async migration.
+
+### Grafana — Request Rate During Live Traffic
+![Grafana dashboard showing request rate spike](docs/images/grafana-request-rate.png)
 
 ## Screenshots
 
@@ -275,6 +297,8 @@ Fix: rebuilt the variable explicitly from the individual `PGHOST`, `PGPORT`, `PG
 | Rate limiting | slowapi — 60 requests per minute |
 | Testing | pytest, TestClient, unittest.mock |
 | Containerisation | Docker, Docker Compose |
+| Metrics | Prometheus 2.53, Grafana 11.1 |
+| Observability | Custom ASGI middleware, /metrics endpoint |
 | CI | GitHub Actions |
 | Language | Python 3.11 |
 
@@ -289,7 +313,7 @@ This is the sixth project in a backend and data engineering portfolio built thro
 | [AWS Data Platform](https://github.com/OjongBessongNKONGHO/aws-data-platform) | Terraform, AWS, EC2, RDS, S3 |
 | [DuckDB Analytics](https://github.com/OjongBessongNKONGHO/duckdb-analytics) | DuckDB, PyArrow, Click, APScheduler |
 | [Spark Streaming Pipeline](https://github.com/OjongBessongNKONGHO/spark-streaming-pipeline) | Spark, Kafka, Delta Lake, Terraform, AWS |
-| **Weather API** (this repo) | FastAPI, PostgreSQL, SQLAlchemy, Pydantic v2, Docker |
+| **Weather API** (this repo) | FastAPI, PostgreSQL, SQLAlchemy, Pydantic v2, Prometheus, Grafana, Docker |
 
 ## Author
 
