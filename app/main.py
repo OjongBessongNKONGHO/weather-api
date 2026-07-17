@@ -1,3 +1,13 @@
+import sys
+import asyncio
+
+# psycopg3's async mode is incompatible with Windows' default
+# ProactorEventLoop — it needs the selector-based loop. Guarded so it
+# only applies on Windows: Linux (prod, CI) is untouched. Without this,
+# any real DB call on a Windows dev machine dies with InterfaceError.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -6,10 +16,14 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, engine
 from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import weather, health
 from app.logging_config import configure_logging
+from starlette.responses import Response as StarletteResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from app.middleware.metrics import MetricsMiddleware
+from app.metrics import rate_limit_rejections_total, db_pool_checked_out, db_pool_size
 
 
 # Configure logging at module load time — before the app starts handling
@@ -54,8 +68,23 @@ app = FastAPI(
 # Rate limiting — attaches the limiter to the app so slowapi
 # can intercept requests and enforce per-IP limits.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """
+    Wraps slowapi's stock handler to count rejections before delegating.
+    The 429 response itself is unchanged — we only add observability.
+    """
+    route = request.scope.get("route")
+    rate_limit_rejections_total.labels(
+        route=route.path if route else "unmatched"
+    ).inc()
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 # CORS — controls which origins can call this API from a browser.
 # In development we allow all origins. In production you would
@@ -94,6 +123,29 @@ async def internal_error_handler(request: Request, exc):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An internal error occurred. Please try again later."},
     )
+
+
+# Register routers under the /api/v1 prefix.
+# Versioning the API from day one means you can introduce /api/v2
+# later without breaking existing consumers — they keep calling /api/v1
+# until they choose to migrate.
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """
+    Prometheus scrape endpoint.
+
+    Pool gauges are set at scrape time rather than continuously —
+    Prometheus pulls every few seconds anyway, so sampling here gives
+    the same resolution with zero per-request overhead. Guarded for
+    SQLite (NullPool has no pool accounting — same asymmetry that
+    broke CI during the async migration).
+    """
+    pool = engine.pool
+    if hasattr(pool, "checkedout"):
+        db_pool_checked_out.set(pool.checkedout())
+    if hasattr(pool, "size"):
+        db_pool_size.set(pool.size())
+    return StarletteResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # Register routers under the /api/v1 prefix.
