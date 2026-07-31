@@ -6,10 +6,11 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
 ![Tests](https://img.shields.io/badge/Tests-41%20passing-success?style=flat)
 
-
 A REST API for weather data across 21 cities and 6 continents. Current conditions come from OpenWeatherMap. Thirty days of hourly history per city sit in PostgreSQL — 14,637 readings total. Every protected endpoint requires an API key. History responses are paginated. Statistics are aggregated inside the database, not in Python. The test suite runs in 0.54 seconds against SQLite with no network access.
 
 The architecture is deliberately layered: models define the schema, schemas control what crosses the API boundary, services own all business logic, and routers do nothing except route. That separation means the same service functions can be called from a CLI, a background job, or a second API version without rewriting logic.
+
+**Live:** [https://weather-api-rvit.onrender.com/docs](https://weather-api-rvit.onrender.com/docs) — click Authorize, enter the API key from the README, and every endpoint is testable in the browser.
 
 ---
 
@@ -21,7 +22,7 @@ GET  /api/v1/cities                    21 cities, ordered alphabetically
 GET  /api/v1/weather/latest            Current conditions for every city (optional ?continent= filter)
 GET  /api/v1/weather/{city}/latest     Current conditions for one city
 GET  /api/v1/weather/{city}/history    Paginated history, newest first
-GET  /api/v1/weather/{city}/stats      Aggregated stats over 1–30 days
+GET  /api/v1/weather/{city}/stats      Aggregated stats over 1-30 days
 ```
 
 All endpoints except `/health` require an `X-API-Key` request header.
@@ -56,8 +57,10 @@ app/
 tests/
 ├── conftest.py        # SQLite override, fixtures, test client
 ├── test_health.py     # Health endpoint contract tests
-└── test_weather.py    # Weather endpoints + OpenWeatherMap mock tests
+├── test_weather.py    # Weather endpoints + OpenWeatherMap mock tests
+└── test_rate_limit.py # Rate limiting behaviour
 ```
+
 The models and schemas are deliberately separate. The database model is concerned with storage — the schema is concerned with what external consumers see. A database refactor should not automatically change the API contract, and an API change should not require a migration. Keeping them separate means each can evolve independently.
 
 ---
@@ -82,14 +85,13 @@ Tests that make real HTTP calls are flaky. They fail when the network is slow, t
 **Caching is in-memory, not a separate service.**
 A single-instance deployment serving 21 cities does not need a distributed cache. An in-memory dictionary with a time-based expiry solves the actual problem — repeated identical queries hitting PostgreSQL — without provisioning, running, or maintaining a separate caching service. The cache interface (`get`, `set`, `clear`) mirrors what a Redis client exposes, so migrating to Redis later, if the API ever runs across multiple instances, is a contained change to one file.
 
-- **Request logging middleware** — every request logged with method, path, status code and response time in milliseconds
-- **Structured logging** — centralised logging configuration with timestamps and log levels across all modules
-- **Database latency monitoring** — health endpoint measures and returns PostgreSQL round-trip time in milliseconds
-- **Alembic migrations** — versioned schema management replacing `create_all` for safe production deployments
-- **Request logging middleware** — every request logged with method, path, status code and response time in milliseconds using a Starlette `BaseHTTPMiddleware` — no changes needed in route handlers
-- **Structured logging** — centralised `logging_config.py` configures timestamps, log levels and module names once at startup — every module inherits the configuration automatically
-- **Database latency monitoring** — the `/health` endpoint measures PostgreSQL round-trip time in milliseconds, distinguishing a slow database from a down one
-- **Alembic migrations** — versioned schema management with `upgrade()` and `downgrade()` functions replacing `create_all`, making schema evolution safe in production
+**Request logging middleware** — every request logged with method, path, status code and response time in milliseconds using a Starlette `BaseHTTPMiddleware` — no changes needed in route handlers.
+
+**Structured logging** — centralised `logging_config.py` configures timestamps, log levels and module names once at startup — every module inherits the configuration automatically.
+
+**Database latency monitoring** — the `/health` endpoint measures PostgreSQL round-trip time in milliseconds, distinguishing a slow database from a down one.
+
+**Alembic migrations** — versioned schema management with `upgrade()` and `downgrade()` functions replacing `create_all`, making schema evolution safe in production.
 
 ---
 
@@ -129,8 +131,6 @@ make up     # starts the API on http://localhost:8000
 
 Interactive documentation at `http://localhost:8000/docs` — click Authorize, enter your `API_KEY_SECRET`, and every endpoint is testable in the browser.
 
-Alternative documentation UI available at `http://localhost:8000/redoc`.
-
 **Full stack with Docker Compose:**
 
 ```bash
@@ -146,6 +146,7 @@ PostgreSQL starts first. The API waits for the database healthcheck before start
 ```bash
 make test
 ```
+
 41 tests. 0.5 seconds. No PostgreSQL, no network.
 
 **tests/test_health.py**
@@ -171,12 +172,10 @@ make test
 - parse_current_weather maps every OpenWeatherMap field correctly
 - generate_historical_reading stays within plausible temperature variance
 
-The four mock tests use `unittest.mock.patch` to intercept `requests.get` before it reaches the network. Each test controls exactly what the fake response contains and verifies the seeder's behaviour in isolation.
-
 **tests/test_rate_limit.py**
 - First 60 requests to a rate-limited endpoint succeed, the 61st returns 429
 - 429 response body reports the actual limit, not just a bare status code
-- Exhausting the limit on one endpoint doesn't block a different endpoint — each route tracks its own budget
+- Exhausting the limit on one endpoint does not block a different endpoint — each route tracks its own budget
 
 `limiter.reset()` is called before and after each test. The test client is shared across the whole suite and slowapi keys its limit by client IP, which the test client always reports identically — without resetting, these tests would be order-dependent on whatever ran before them, and would leave the limiter blown for whatever runs after.
 
@@ -184,7 +183,7 @@ The four mock tests use `unittest.mock.patch` to intercept `requests.get` before
 
 ## What Went Wrong
 
-Four real problems hit during development. They are documented here because the fixes are more instructive than the features.
+Five real problems hit during development. They are documented here because the fixes are more instructive than the features.
 
 **500 on `/weather/{city}/latest` — missing SQLAlchemy relationship**
 
@@ -192,29 +191,29 @@ The `WeatherReadingResponse` schema includes a nested `city` object. The `Weathe
 
 Fix: added `relationship("City")` to `WeatherReading` and changed `city_id` from a plain `Integer` column to `Integer, ForeignKey("cities.id")`. The ORM could then eager-load the city in the same query. The 500 became a 200.
 
-**`MissingGreenlet` after migrating to async SQLAlchemy — lazy relationship loading isn't safe in async mode**
+**`MissingGreenlet` after migrating to async SQLAlchemy — lazy relationship loading is not safe in async mode**
 
-Migrating the service layer from `Session` to `AsyncSession` meant rewriting every query from `.query()` to `select()` + `await db.execute()`. That part was mechanical. What wasn't obvious: accessing `reading.city` afterward — a lazy-loaded relationship — raised `MissingGreenlet`, because lazy loading normally triggers a synchronous query behind the scenes, and that isn't safe to do implicitly inside an async session.
+Migrating the service layer from `Session` to `AsyncSession` meant rewriting every query from `.query()` to `select()` + `await db.execute()`. That part was mechanical. What was not obvious: accessing `reading.city` afterward — a lazy-loaded relationship — raised `MissingGreenlet`, because lazy loading normally triggers a synchronous query behind the scenes, and that is not safe to do implicitly inside an async session.
 
 Fix: added `.options(selectinload(WeatherReading.city))` to every query whose response includes the nested `city` object, forcing SQLAlchemy to eager-load it in the same round trip instead of lazily on attribute access.
 
 **SQLite rejected `pool_size` and `max_overflow` — CI broke after the same migration**
 
-`pool_size` and `max_overflow` tune a real connection pool, a concept that only applies to server-based databases. CI runs tests against SQLite (via `aiosqlite`) for speed, and SQLite's default `NullPool` doesn't support pooling at all — it rejected both arguments outright and crashed on import, before a single test could run. This never showed up locally, since the local `.env` points at real PostgreSQL, where those arguments are valid.
+`pool_size` and `max_overflow` tune a real connection pool, a concept that only applies to server-based databases. CI runs tests against SQLite (via `aiosqlite`) for speed, and SQLite's default `NullPool` does not support pooling at all — it rejected both arguments outright and crashed on import, before a single test could run. This never showed up locally, since the local `.env` points at real PostgreSQL, where those arguments are valid.
 
-Fix: made both arguments conditional — only passed to `create_async_engine` when the database URL isn't SQLite. PostgreSQL still gets its tuned pool in production; SQLite in tests gets neither, since it has no pool to tune.
+Fix: made both arguments conditional — only passed to `create_async_engine` when the database URL is not SQLite. PostgreSQL still gets its tuned pool in production; SQLite in tests gets neither, since it has no pool to tune.
 
 **Production crashed on Railway — an auto-generated `DATABASE_URL` pointed at a driver that no longer existed**
 
-Switching from `psycopg2` to `psycopg3` (to share one driver between Alembic's sync migrations and the app's async runtime) meant `psycopg2-binary` was removed from `requirements.txt`. Railway's `DATABASE_URL` variable was a live reference to the Postgres service's own auto-generated connection string — plain `postgresql://`, which SQLAlchemy resolves to `psycopg2` by default. The moment `psycopg2-binary` was gone, that reference broke, and the deployment crashed on the next `import`.
+Switching from `psycopg2` to `psycopg3` meant `psycopg2-binary` was removed from `requirements.txt`. Railway's `DATABASE_URL` variable was a live reference to the Postgres service's own auto-generated connection string — plain `postgresql://`, which SQLAlchemy resolves to `psycopg2` by default. The moment `psycopg2-binary` was gone, that reference broke, and the deployment crashed on the next `import`.
 
-Fix: rebuilt the variable explicitly from the individual `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` values Railway exposes, with the driver stated up front: `postgresql+psycopg://...`. Same credentials, explicit driver, no more silent default.
+Fix: rebuilt the variable explicitly with the driver stated up front: `postgresql+psycopg://...`. Same credentials, explicit driver, no more silent default. The same fix was applied on Render.
 
 **Windows dev environment crashed on first real DB request — psycopg3 incompatible with uvicorn's ProactorEventLoop**
 
-Adding Prometheus metrics required running the full stack locally against PostgreSQL for the first time since the psycopg3 migration. Every previous local run used SQLite (tests) or Railway (production). The first real DB request crashed with `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop'` — psycopg3's async mode requires the selector-based event loop, but uvicorn on Windows sets ProactorEventLoop after import, overriding any policy set in application code.
+Adding Prometheus metrics required running the full stack locally against PostgreSQL for the first time since the psycopg3 migration. The first real DB request crashed with `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop'` — psycopg3's async mode requires the selector-based event loop, but uvicorn on Windows sets ProactorEventLoop after import.
 
-Fix: `run.py` owns the event loop directly — creates a `WindowsSelectorEventLoop`, sets it as the running loop, then passes it to `uvicorn.Server` via `loop.run_until_complete(server.serve())`. Uvicorn runs inside the loop we created rather than creating its own. Guarded with `sys.platform == "win32"` so Linux (CI, production) is untouched.
+Fix: `run.py` owns the event loop directly — creates a `WindowsSelectorEventLoop`, sets it as the running loop, then passes it to `uvicorn.Server` via `loop.run_until_complete(server.serve())`. Guarded with `sys.platform == "win32"` so Linux (CI, production) is untouched.
 
 ---
 
@@ -234,6 +233,8 @@ Four instruments, each motivated by something real:
 
 ### Grafana — Request Rate During Live Traffic
 ![Grafana dashboard showing request rate spike](docs/images/grafana-request-rate.png)
+
+---
 
 ## Screenshots
 
@@ -269,7 +270,7 @@ Four instruments, each motivated by something real:
 
 ---
 
-## Metrics
+## At a Glance
 
 | | |
 |---|---|
@@ -281,6 +282,7 @@ Four instruments, each motivated by something real:
 | Rate limit | 60 requests per minute per IP |
 | History depth | 30 days, paginated |
 | Stats window | 1 to 30 days, configurable |
+| Live URL | https://weather-api-rvit.onrender.com |
 
 ---
 
@@ -299,27 +301,32 @@ Four instruments, each motivated by something real:
 | Containerisation | Docker, Docker Compose |
 | Metrics | Prometheus 2.53, Grafana 11.1 |
 | Observability | Custom ASGI middleware, /metrics endpoint |
+| Hosting | Render |
 | CI | GitHub Actions |
 | Language | Python 3.11 |
 
+---
+
 ## Portfolio
 
-This is the sixth project in a backend and data engineering portfolio built throughout 2026.
+This is one of six data engineering projects built throughout 2026.
 
 | Project | Stack |
 |---------|-------|
 | [Weather ETL Pipeline](https://github.com/OjongBessongNKONGHO/weather-etl-pipeline) | Airflow, PostgreSQL, Docker |
-| [Kafka Streaming Pipeline](https://github.com/OjongBessongNKONGHO/kafka-streaming-pipeline) | Kafka, Pydantic v2, PostgreSQL, Docker |
-| [AWS Data Platform](https://github.com/OjongBessongNKONGHO/aws-data-platform) | Terraform, AWS, EC2, RDS, S3 |
+| [Kafka Streaming Pipeline](https://github.com/OjongBessongNKONGHO/kafka-streaming-pipeline) | Kafka, Avro, Confluent Schema Registry, Pydantic v2, PostgreSQL, Docker |
+| [AWS Data Platform](https://github.com/OjongBessongNKONGHO/aws-data-platform) | Terraform, AWS, EC2, RDS, S3, VPC |
 | [DuckDB Analytics](https://github.com/OjongBessongNKONGHO/duckdb-analytics) | DuckDB, PyArrow, Click, APScheduler |
-| [Spark Streaming Pipeline](https://github.com/OjongBessongNKONGHO/spark-streaming-pipeline) | Spark, Kafka, Delta Lake, Terraform, AWS |
-| **Weather API** (this repo) | FastAPI, PostgreSQL, SQLAlchemy, Pydantic v2, Prometheus, Grafana, Docker |
+| [Spark Streaming Pipeline](https://github.com/OjongBessongNKONGHO/spark-streaming-pipeline) | Spark, Kafka, Delta Lake, dbt, Airflow, Terraform, AWS |
+| **Weather API** (this repo) | FastAPI, PostgreSQL, SQLAlchemy 2.0 async, Pydantic v2, Prometheus, Grafana, Docker |
+
+---
 
 ## Author
 
 **Ojong Bessong NKONGHO**
 BSc Computer Science, DSTI School of Engineering, Paris
-MSc Data Engineering and AI — September 2026
+MSc Data Engineering and AI — March 2027
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-nkongho--ojong-0077B5?style=flat&logo=linkedin)](https://linkedin.com/in/nkongho-ojong)
 [![GitHub](https://img.shields.io/badge/GitHub-OjongBessongNKONGHO-181717?style=flat&logo=github)](https://github.com/OjongBessongNKONGHO)
