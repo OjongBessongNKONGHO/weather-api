@@ -199,3 +199,61 @@ async def get_city_stats(
         avg_wind_speed=round(stats.avg_wind_speed, 2),
         total_readings=stats.total_readings,
     )
+
+
+async def compare_cities(
+    db: AsyncSession,
+    city_a: City,
+    city_b: City,
+    days: int,
+) -> dict:
+    """
+    Computes side-by-side weather statistics for two cities over N days.
+
+    Each city's stats are fetched independently using the same aggregation
+    logic as get_city_stats — all computation happens inside PostgreSQL.
+    Deltas are computed in Python by subtracting the two averages — the
+    only Python arithmetic in the entire comparison path.
+
+    Returns a dict matching WeatherComparisonResponse fields so the router
+    can pass it directly to the schema.
+    """
+    from app.schemas.weather import CityStatsComparison, CityResponse
+
+    stats_a = await get_city_stats(db, city_a, days)
+    stats_b = await get_city_stats(db, city_b, days)
+
+    city_a_comparison = CityStatsComparison(
+        city=CityResponse.model_validate(city_a),
+        avg_temperature=stats_a.avg_temperature,
+        min_temperature=stats_a.min_temperature,
+        max_temperature=stats_a.max_temperature,
+        avg_humidity=stats_a.avg_humidity,
+        min_humidity=stats_a.min_humidity,
+        max_humidity=stats_a.max_humidity,
+        avg_wind_speed=stats_a.avg_wind_speed,
+        total_readings=stats_a.total_readings,
+    )
+
+    city_b_comparison = CityStatsComparison(
+        city=CityResponse.model_validate(city_b),
+        avg_temperature=stats_b.avg_temperature,
+        min_temperature=stats_b.min_temperature,
+        max_temperature=stats_b.max_temperature,
+        avg_humidity=stats_b.avg_humidity,
+        min_humidity=stats_b.min_humidity,
+        max_humidity=stats_b.max_humidity,
+        avg_wind_speed=stats_b.avg_wind_speed,
+        total_readings=stats_b.total_readings,
+    )
+
+    return {
+        "days": days,
+        "city_a": city_a_comparison,
+        "city_b": city_b_comparison,
+        "temperature_delta": round(
+            stats_b.avg_temperature - stats_a.avg_temperature, 2
+        ),
+        "humidity_delta": round(stats_b.avg_humidity - stats_a.avg_humidity, 2),
+        "wind_speed_delta": round(stats_b.avg_wind_speed - stats_a.avg_wind_speed, 2),
+    }

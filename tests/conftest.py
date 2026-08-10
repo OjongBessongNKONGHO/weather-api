@@ -90,11 +90,19 @@ def seed_test_data():
                 longitude=-0.1278,
                 timezone="Europe/London",
             )
-            db.add_all([paris, london])
+            tokyo = City(
+                name="Tokyo",
+                country="Japan",
+                continent="Asia",
+                latitude=35.6762,
+                longitude=139.6503,
+                timezone="Asia/Tokyo",
+            )
+            db.add_all([paris, london, tokyo])
             await db.commit()
             await db.refresh(paris)
             await db.refresh(london)
-
+            await db.refresh(tokyo)
             readings = [
                 WeatherReading(
                     city_id=paris.id,
@@ -138,10 +146,24 @@ def seed_test_data():
                     recorded_at=datetime.now(UTC).replace(tzinfo=None)
                     - timedelta(hours=1),
                 ),
+                WeatherReading(
+                    city_id=tokyo.id,
+                    temperature=28.3,
+                    feels_like=30.1,
+                    humidity=80,
+                    pressure=1010,
+                    wind_speed=5.2,
+                    wind_direction=180,
+                    description="scattered clouds",
+                    cloudiness=40,
+                    visibility=10000,
+                    recorded_at=datetime.now(UTC).replace(tzinfo=None)
+                    - timedelta(hours=1),
+                ),
             ]
             db.add_all(readings)
             await db.commit()
-            return {"paris": paris, "london": london}
+            return {"paris": paris, "london": london, "tokyo": tokyo}
 
     return asyncio.run(_seed())
 
