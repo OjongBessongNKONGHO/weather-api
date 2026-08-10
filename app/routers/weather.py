@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.limiter import limiter
@@ -8,6 +9,7 @@ from app.schemas.weather import (
     WeatherReadingResponse,
     WeatherStatsResponse,
     PaginatedWeatherResponse,
+    WeatherComparisonResponse,
 )
 from app.services import weather as weather_service
 
@@ -46,6 +48,41 @@ async def get_latest_all(
     ),
 ) -> list[WeatherReadingResponse]:
     return await weather_service.get_latest_readings_all_cities(db, continent=continent)
+
+
+@router.get(
+    "/weather/compare",
+    response_model=WeatherComparisonResponse,
+    summary="Compare two cities",
+    description=(
+        "Returns side-by-side weather statistics for two cities over N days. "
+        "Deltas are computed as city_b minus city_a - a positive temperature_delta "
+        "means city_b is warmer than city_a over the requested period."
+    ),
+)
+@limiter.limit("60/minute")
+async def compare_cities(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_api_key),
+    city_a: str = Query(description="First city name, e.g. 'Paris'"),
+    city_b: str = Query(description="Second city name, e.g. 'Tokyo'"),
+    days: int = Query(
+        default=7,
+        ge=1,
+        le=30,
+        description="Number of days to include in the comparison, maximum 30",
+    ),
+) -> WeatherComparisonResponse:
+    if city_a.lower() == city_b.lower():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="city_a and city_b must be different cities.",
+        )
+    city_a_obj = await weather_service.get_city_by_name(db, city_a)
+    city_b_obj = await weather_service.get_city_by_name(db, city_b)
+    result = await weather_service.compare_cities(db, city_a_obj, city_b_obj, days)
+    return WeatherComparisonResponse(**result)
 
 
 @router.get(
@@ -108,7 +145,6 @@ async def get_city_history(
         db, city, page, limit
     )
     total_pages = -(-total_count // limit)  # ceiling division without math.ceil
-
     return PaginatedWeatherResponse(
         data=readings,
         total_count=total_count,

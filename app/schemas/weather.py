@@ -108,3 +108,44 @@ class HealthResponse(BaseModel):
     )
     version: str
     environment: str
+
+
+class CityStatsComparison(BaseModel):
+    """
+    Per-city stats slice inside a comparison response.
+    Mirrors WeatherStatsResponse but without the days field,
+    which belongs to the comparison as a whole.
+    """
+
+    city: CityResponse
+    avg_temperature: float
+    min_temperature: float
+    max_temperature: float
+    avg_humidity: float
+    min_humidity: int
+    max_humidity: int
+    avg_wind_speed: float
+    total_readings: int
+
+
+class WeatherComparisonResponse(BaseModel):
+    """
+    Side-by-side weather comparison between two cities over N days.
+
+    Deltas are computed as city_b minus city_a so a positive delta means
+    city_b is warmer, more humid, or windier than city_a. All aggregation
+    happens inside PostgreSQL — Python only subtracts the two averages.
+    """
+
+    days: int = Field(description="Number of days included in the comparison")
+    city_a: CityStatsComparison
+    city_b: CityStatsComparison
+    temperature_delta: float = Field(
+        description="avg_temperature(city_b) minus avg_temperature(city_a) in Celsius"
+    )
+    humidity_delta: float = Field(
+        description="avg_humidity(city_b) minus avg_humidity(city_a) in percentage points"
+    )
+    wind_speed_delta: float = Field(
+        description="avg_wind_speed(city_b) minus avg_wind_speed(city_a) in m/s"
+    )
