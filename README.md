@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791?style=flat&logo=postgresql)
-![Tests](https://img.shields.io/badge/Tests-41%20passing-success?style=flat)
+![Tests](https://img.shields.io/badge/Tests-58%20passing-success?style=flat)
 
 A REST API for weather data across 21 cities and 6 continents. Current conditions come from OpenWeatherMap. Thirty days of hourly history per city sit in PostgreSQL — 14,637 readings total. Every protected endpoint requires an API key. History responses are paginated. Statistics are aggregated inside the database, not in Python. The test suite runs in 0.54 seconds against SQLite with no network access.
 
@@ -23,6 +23,7 @@ GET  /api/v1/weather/latest            Current conditions for every city (option
 GET  /api/v1/weather/{city}/latest     Current conditions for one city
 GET  /api/v1/weather/{city}/history    Paginated history, newest first
 GET  /api/v1/weather/{city}/stats      Aggregated stats over 1-30 days
+GET  /api/v1/weather/compare    Side-by-side stats for two cities with computed deltas
 ```
 
 All endpoints except `/health` require an `X-API-Key` request header.
@@ -277,7 +278,7 @@ Four instruments, each motivated by something real:
 | Cities | 21 across 6 continents |
 | Weather readings | 14,637 (30 days hourly per city) |
 | Current data source | OpenWeatherMap API |
-| Tests | 41 passing in 0.5 seconds |
+| Tests | 58 passing in 0.5 seconds |
 | Authentication | API key — X-API-Key header |
 | Rate limit | 60 requests per minute per IP |
 | History depth | 30 days, paginated |
