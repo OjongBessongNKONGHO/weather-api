@@ -292,7 +292,7 @@ Four instruments, each motivated by something real:
 | Layer | Technology |
 |-------|------------|
 | Framework | FastAPI 0.111 |
-| Database | PostgreSQL 15 |
+| Database | PostgreSQL 15 (Neon.tech serverless) |
 | ORM | SQLAlchemy 2.0 (async) |
 | Driver | psycopg3 — one driver for both Alembic's sync migrations and the app's async runtime |
 | Validation | Pydantic v2 |
@@ -302,7 +302,7 @@ Four instruments, each motivated by something real:
 | Containerisation | Docker, Docker Compose |
 | Metrics | Prometheus 2.53, Grafana 11.1 |
 | Observability | Custom ASGI middleware, /metrics endpoint |
-| Hosting | Render |
+| Hosting | Render (app) + Neon.tech (database) |
 | CI | GitHub Actions |
 | Language | Python 3.11 |
 
